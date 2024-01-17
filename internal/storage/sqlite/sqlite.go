@@ -4,11 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/anesthesia-band/golang-shop-api/internal/storage"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func New(storagePath string) (*storage.Storage, error) {
+func New(storagePath string, migrations []string) (*sql.DB, error) {
 	const op = "storage.sqlite.New"
 
 	db, err := sql.Open("sqlite3", storagePath)
@@ -16,66 +15,38 @@ func New(storagePath string) (*storage.Storage, error) {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	stmt, err := db.Prepare(migration)
+	err = executeMigrations(db, migrations)
 	if err != nil {
-		return nil, fmt.Errorf("unable to prepare migration: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	_, err = stmt.Exec()
-	if err != nil {
-		return nil, fmt.Errorf("unable to complete migration: %w", err)
-	}
-
-	return &storage.Storage{DB: db}, nil
+	return db, nil
 }
 
-// TODO: Add migrations
-const migration string = `
-	create table if not exists goods (
-		id integer not null primary key autoincrement,
-		name varchar(255) not null,
-		type varchar(255) not null,
-		data TEXT not null,
-		active BOOLEAN not null default true,
-		created_at datetime not null default CURRENT_TIMESTAMP,
-		updated_at datetime not null default CURRENT_TIMESTAMP
-  	)
+func executeMigrations(db *sql.DB, migrations []string) error {
+	transaction, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("unable to start transaction: %w", err)
+	}
 
-	create index if not exists idx__goods__type on goods(type)
+	for _, migration := range migrations {
+		stmt, err := transaction.Prepare(migration)
+		if err != nil {
+			transaction.Rollback()
+			return fmt.Errorf("unable to prepare migration: %w", err)
+		}
 
-	create table if not exists groups (
-		id integer not null primary key autoincrement,
-		name varchar(255) not null,
-		type varchar(255) not null,
-		data TEXT not null,
-		active BOOLEAN not null default true,
-		created_at datetime not null default CURRENT_TIMESTAMP,
-		updated_at datetime not null default CURRENT_TIMESTAMP
-	)
+		_, err = stmt.Exec()
+		if err != nil {
+			transaction.Rollback()
+			return fmt.Errorf("unable to execute migration: %w", err)
+		}
+	}
 
-	create index if not exists idx__groups__type on groups(type)
+	err = transaction.Commit()
+	if err != nil {
+		return fmt.Errorf("unable to execute all migrations: %w", err)
+	}
 
-	create table if not exists groups_goods (
-		group_id INTEGER not null,
-		good_id INTEGER not null,
-		active BOOLEAN not null default true,
-		created_at datetime not null default CURRENT_TIMESTAMP,
-		updated_at datetime not null default CURRENT_TIMESTAMP,
-
-		primary key (kit_id, good_id)
-	)
-
-	create table orders (
-		id integer not null primary key autoincrement,
-		name varchar(255) null,
-		phone varchar(255) not null,
-		email varchar(255) null,
-		order_data TEXT null,
-		status VARCHAR(255) not null default 'new',
-		created_at datetime not null default CURRENT_TIMESTAMP,
-		updated_at datetime not null default CURRENT_TIMESTAMP
-	)
-
-	create index if not exists idx__orders__phone on orders(phone)
-	create index if not exists idx__orders__status on orders(status)
-`
+	return nil
+}
