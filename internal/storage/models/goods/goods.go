@@ -1,6 +1,8 @@
 package goods
 
 import (
+	"fmt"
+
 	"github.com/anesthesia-band/golang-shop-api/internal/storage"
 )
 
@@ -19,6 +21,7 @@ type Good struct {
 	GoodType GoodType `db:"type"`
 	Data     GoodData `db:"name"`
 	Price    string   `db:"price"`
+	Active   bool     `db:"active"`
 }
 
 type GoodInsert struct {
@@ -42,20 +45,20 @@ func GetById(storage *storage.Storage, goodId int) (*Good, error) {
 		return nil, err
 	}
 
-	result, err := stmt.Query(goodId)
+	var (
+		id       int
+		name     string
+		goodType GoodType
+		data     GoodData
+		price    string
+		active   bool
+	)
+	err = stmt.QueryRow(goodId).Scan(&id, &name, &goodType, &data, &price, &active)
 	if err != nil {
 		return nil, err
 	}
 
-	goods := []Good{}
-	for result.Next() {
-		var good Good
-		err := result.Scan(&good)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &goods[0], nil
+	return &Good{id, name, goodType, data, price, active}, nil
 }
 
 func GetAll(storage *storage.Storage, active bool) (*[]Good, error) {
@@ -69,13 +72,22 @@ func GetAll(storage *storage.Storage, active bool) (*[]Good, error) {
 		return nil, err
 	}
 
+	fmt.Println(result)
 	goods := []Good{}
 	for result.Next() {
-		var good Good
-		err := result.Scan(&good)
+		var (
+			id       int
+			name     string
+			goodType GoodType
+			data     GoodData
+			price    string
+			active   bool
+		)
+		err := result.Scan(&id, &name, &goodType, &data, &price, &active)
 		if err != nil {
-			continue
+			return nil, err
 		}
+		goods = append(goods, Good{id, name, goodType, data, price, active})
 	}
 	return &goods, nil
 }
